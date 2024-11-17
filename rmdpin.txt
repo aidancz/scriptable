@@ -1,0 +1,137 @@
+// 你好，bili_96384572132
+
+// 这个脚本使用的语言是javascript
+// 如果没有了解过这方面的内容，我极力推荐王垠的这个书：https://www.yinwang.org/blog-cn/2021/05/11/gucs-sample
+// 也可以看w3school的javascript教程：https://www.w3schools.com/js/
+
+// scriptable是一个ios软件，可以让你使用javascript语言来自动化ios
+// scriptable提供了一些变量和函数，他们的文档可以在这里找到：https://docs.scriptable.app/
+// 文档也可以在ipad应用里找到
+
+
+
+// 这个脚本很短，我们一句一句看：
+
+//d1 & d2
+const d1 = new Date()
+d1.setDate(d1.getDate()-7)
+
+const d2 = new Date()
+d2.setMonth(d2.getMonth()+1)
+
+console.log(`d1:${d1.toISOString()} d2:${d2.toISOString()}`)
+// 这里我们定义了两个变量：d1和d2
+// 其实就是date1和date2的意思
+// 提醒事项有截止日期，我们想同步截止日期在d1到d2之间的提醒事项
+
+
+
+//rmd
+const rmd = await Reminder.incompleteDueBetween(d1, d2)
+console.log(`Get ${rmd.length} rmd`)
+// rmd就是reminder，也就是提醒事项
+// 这里我们获取了所有截止日期在d1到d2之间的提醒事项，把他们存放在变量rmd里
+
+
+
+//rmdPin
+let rmdPin = await CalendarEvent.between(d1, d2)
+rmdPin = rmdPin.filter(x => x.notes != null && x.notes.includes("[rmdId]"))
+console.log(`Get ${rmdPin.length} rmdPin`)
+// rmdPin就是reminder pin，每一个提醒事项对应一个日历事项，这里我把rmd对应的日历事项叫rmdPin
+// 这里我们获取了所有截止日期在d1到d2之间的日历事项，把他们存放在变量rmdPin里
+
+
+
+//---
+console.log("---")
+
+
+
+//Delete rmdPins that have wrong rmdId, or the rmdId is duplicate
+const reg = /\[rmdId\]\n([A-Z0-9\-]*)/
+// 用变量reg记录一个正则表达式，它表达的文本大概是这样：
+// [rmdId]
+// ABCD1234
+const rmdIdSet = new Set(rmd.map(x => x.identifier))
+// 每一个rmd都对应一个id，我们把他们放在变量rmdIdSed变量里
+const rmdPinIdSet = new Set()
+// 每一个rmdPin都对应一个id，我们先准备好一个变量叫rmdPinIdSet，等会再往里放东西（现在是空的）
+var n = 0
+for (const i of rmdPin) {
+  const match = i.notes.match(reg)
+  if (!rmdIdSet.has(match[1])) {i.remove(), n += 1}
+  if (!rmdPinIdSet.has(match[1])) rmdPinIdSet.add(match[1])
+  else {i.remove(), n += 1}
+}
+// 这个循环完成的事情是：
+// 对于rmdPin，找到他们备注里的文本，并提取出其中的id
+// 如果这个id并不在rmdIdSet里（说明这是错误的rmdPin，我们就删除它）
+// 如果这个id并不在rmdPinIdSet里，我们就记录id到rmdPinIdSet，如果在（说明居然创建了重复的rmdPin），我们就删除这个rmdPin
+console.log(`Delete ${n} rmdPin`)
+// 这段代码确保了所有的rmdPin都是正确的，没有多余或者错误的，但可能会少
+
+
+
+//Update rmdPin
+var n = 0
+for (const i of rmd) {
+// 对rmd循环
+  const i_rmdPinNotes = `[rmdId]\n${i.identifier}`
+  // 变量i_rmdPinNotes表达rmd对应的rmdPin的notes应该是什么样子的
+  var [i_rmdPin] = rmdPin.filter(x => x.notes.includes(i_rmdPinNotes))
+  //Iterable destructuring, i_rmdPin will get the first value in rmdPin array
+  //Use "var" to escape block scope
+  // 找rmdPin里notes是i_rmdPinNotes的
+  if (!i_rmdPin) {
+    var i_rmdPin = new CalendarEvent()
+    i_rmdPin.notes = i_rmdPinNotes
+    console.log(`rmdPin added\t\t(rmdTitle:${i.title})`)
+  }
+  // 如果找不到就创建一个新的rmdPin（只设置了notes）
+  await rmdPin_update(i_rmdPin, i)
+  // 对于i_rmdPin，更新确保它的信息是正确的
+  // 所以这是一个暴力的脚本，不管rmdPin正确与否都要更新信息
+  n += 1
+}
+console.log(`Update ${n} rmdPin`)
+
+//Complete
+Script.complete()
+// 脚本结束
+
+
+
+
+
+
+//---
+// 这里定义上面的脚本使用的两个函数
+
+//rmdPin_update()
+async function rmdPin_update(rmdPin, rmd) {
+  const calTitle = rmd.calendar.title
+  rmdPin.calendar = await Calendar.forEventsByTitle(calTitle)
+  rmdPin.title = await rmdPin_title(rmd)
+  rmdPin.startDate = rmd.dueDate
+  rmdPin.endDate = rmd.dueDate
+  rmdPin.isAllDay = !rmd.dueDateIncludesTime
+  rmdPin.save()
+  //console.log(`rmdPin updated\t(rmdTitle:${rmd.title})`)
+}
+// 这个函数接收一个rmdPin和一个rmd，把rmd的信息同步到rmdPin
+// 所以这个脚本最主要的函数就是这个
+
+
+
+//rmdPin_title()
+async function rmdPin_title(rmd) {
+  let title = ""
+  if (rmd.isOverdue) {title += "⚠️"}
+  if (rmd.priority) {title += "❗️"}
+  title += rmd.title
+  return title
+}
+// 这个函数接收一个rmd，返回文本
+// 其实就是生成对应的rmdPin的标题
+// 比如超过截止日期就会在rmdPin的标题前加一个⚠️符号
